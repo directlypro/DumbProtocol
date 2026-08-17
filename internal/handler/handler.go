@@ -49,6 +49,7 @@ func NewServer(cfg *config.Config, totpService service.TOTPService) (*Server, er
 		r.Post("/setup", totpH.Setup)
 		r.Post("/verify", totpH.Verify)
 		r.Post("/recovery", totpH.Recovery)
+		r.Post("/code", totpH.Code)
 	})
 
 	return s, nil

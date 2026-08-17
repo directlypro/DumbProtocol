@@ -35,6 +35,10 @@ type RecoveryRequest struct {
 	Count       int    `json:"count,omitempty"`  // optional code count for "generate"
 }
 
+type CodeRequest struct {
+	AccountName string `json:"account_name"`
+}
+
 // Setup handles POST /api/v1/totp/setup
 func (h *TOTPHandler) Setup(w http.ResponseWriter, r *http.Request) {
 	var req SetupRequest
@@ -141,4 +145,30 @@ func (h *TOTPHandler) Recovery(w http.ResponseWriter, r *http.Request) {
 	default:
 		RespondError(w, r, http.StatusBadRequest, "unsupported action: must be 'generate' or 'verify'")
 	}
+}
+
+// Code handles POST /api/v1/totp/code (returns current live 6-digit TOTP passcode)
+func (h *TOTPHandler) Code(w http.ResponseWriter, r *http.Request) {
+	var req CodeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		RespondError(w, r, http.StatusBadRequest, "Invalid JSON payload")
+		return
+	}
+
+	if req.AccountName == "" {
+		RespondError(w, r, http.StatusBadRequest, "account_name is required")
+		return
+	}
+
+	result, err := h.totpService.GetCurrentCode(r.Context(), req.AccountName)
+	if err != nil {
+		if errors.Is(err, service.ErrSecretNotFound) {
+			RespondError(w, r, http.StatusNotFound, err.Error())
+			return
+		}
+		RespondError(w, r, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	RespondJSON(w, r, http.StatusOK, result)
 }

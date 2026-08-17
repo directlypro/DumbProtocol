@@ -39,11 +39,18 @@ type VerificationResult struct {
 	Message     string `json:"message"`
 }
 
+type CurrentCodeResult struct {
+	AccountName      string `json:"account_name"`
+	Code             string `json:"code"`
+	ExpiresInSeconds int    `json:"expires_in_seconds"`
+}
+
 type TOTPService interface {
 	Setup(ctx context.Context, accountName, issuer string) (*TOTPSetupResult, error)
 	Verify(ctx context.Context, accountName, code string) (*VerificationResult, error)
 	GenerateBackupCodes(ctx context.Context, accountName string, count int) ([]string, error)
 	VerifyBackupCode(ctx context.Context, accountName, code string) (*VerificationResult, error)
+	GetCurrentCode(ctx context.Context, accountName string) (*CurrentCodeResult, error)
 }
 
 type totpService struct {
@@ -221,6 +228,38 @@ func (s *totpService) VerifyBackupCode(ctx context.Context, accountName, code st
 		Valid:       true,
 		Method:      "backup_code",
 		Message:     "Backup recovery code accepted and marked as used",
+	}, nil
+}
+
+func (s *totpService) GetCurrentCode(ctx context.Context, accountName string) (*CurrentCodeResult, error) {
+	if accountName == "" {
+		return nil, ErrAccountRequired
+	}
+
+	rec, err := s.repo.GetTOTPSecret(ctx, accountName)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return nil, ErrSecretNotFound
+		}
+		return nil, fmt.Errorf("failed to retrieve TOTP secret: %w", err)
+	}
+
+	now := time.Now().UTC()
+	code, err := totp.GenerateCode(rec.Secret, now)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate TOTP passcode: %w", err)
+	}
+
+	period := int64(rec.Period)
+	if period <= 0 {
+		period = 30
+	}
+	remSeconds := int(period - (now.Unix() % period))
+
+	return &CurrentCodeResult{
+		AccountName:      accountName,
+		Code:             code,
+		ExpiresInSeconds: remSeconds,
 	}, nil
 }
 
