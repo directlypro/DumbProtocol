@@ -5,9 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
-	"github.com/go-chi/chi"
+	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/render"
 )
@@ -17,19 +18,24 @@ type server struct {
 	url        string
 	timeout    time.Duration
 	router     *chi.Mux
-	// add TOPT API
+	// add TOTP API
 }
 
 func NewServer(url string, timeout time.Duration) (*server, error) {
+	addr := strings.TrimPrefix(url, "http://")
+	addr = strings.TrimPrefix(addr, "https://")
+
+	router := chi.NewRouter()
 	s := &server{
-		url:     url,
+		url:     addr,
 		timeout: timeout,
+		router:  router,
 	}
 	return s, nil
 }
 
 func (s *server) Start() error {
-	if s == nil {
+	if s == nil || s.router == nil {
 		return errors.New("server is not initialized")
 	}
 
@@ -55,7 +61,7 @@ func (s *server) Start() error {
 }
 
 func (s *server) Shutdown(ctx context.Context) error {
-	if s == nil {
+	if s == nil || s.httpServer == nil {
 		return errors.New("server is not initialized")
 	}
 	fmt.Println("Shutting down HTTP server")
@@ -64,5 +70,14 @@ func (s *server) Shutdown(ctx context.Context) error {
 }
 
 func (s *server) routes() {
-	// add all relevant routes here
+	s.router.Get("/healthz", s.handleHealthCheck)
 }
+
+func (s *server) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
+	render.Status(r, http.StatusOK)
+	render.JSON(w, r, map[string]string{
+		"status": "ok",
+		"time":   time.Now().Format(time.RFC3339),
+	})
+}
+
