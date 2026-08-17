@@ -1,3 +1,4 @@
 # Ignore these files please
 .env
 .env*
+.idea/*

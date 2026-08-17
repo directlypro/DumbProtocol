@@ -10,42 +10,42 @@ import (
 	"syscall"
 	"time"
 
-	"DumbProtocol/internal/http_server"
-
-	"github.com/joho/godotenv"
+	"DumbProtocol/internal/config"
+	"DumbProtocol/internal/database"
+	"DumbProtocol/internal/handler"
+	"DumbProtocol/internal/repository"
+	"DumbProtocol/internal/service"
 )
 
 const ServiceName = "DumbProtocol"
 
 func main() {
-	// Service initialization
-	fmt.Printf("Starting the %v Service\n", ServiceName)
+	fmt.Printf("Starting %v Service...\n", ServiceName)
 
-	err := godotenv.Load()
+	cfg, err := config.Load()
 	if err != nil {
-		log.Println("No .env file found or error loading variables, using default environment settings")
+		log.Fatalf("Failed to load configuration: %v", err)
 	}
 
-	dbURL := os.Getenv("DATABASE")
-	if dbURL == "" {
-		fmt.Println("DATABASE environment variable not set")
-	} else {
-		fmt.Printf("Connecting to the %v Database\n", dbURL)
+	fmt.Printf("Connecting to %s database at %s...\n", cfg.DatabaseDriver, cfg.DatabaseURL)
+	db, err := database.NewConnection(cfg.DatabaseDriver, cfg.DatabaseURL)
+	if err != nil {
+		log.Fatalf("Failed to initialize database: %v", err)
 	}
+	defer db.Close()
 
-	url := os.Getenv("URL")
-	if url == "" {
-		url = "127.0.0.1:3306"
-	}
+	totpRepo := repository.NewTOTPRepository(db)
 
-	srv, err := http_server.NewServer(url, 15*time.Second)
+	totpService := service.NewTOTPService(totpRepo, cfg.TOTPIssuer)
+
+	srv, err := handler.NewServer(cfg, totpService)
 	if err != nil {
 		log.Fatalf("Failed to create HTTP server: %v", err)
 	}
 
 	serverErrors := make(chan error, 1)
 	go func() {
-		log.Printf("HTTP Server listening on %s", url)
+		log.Printf("HTTP Server listening on %s", cfg.ServerAddress())
 		if err := srv.Start(); err != nil && err != http.ErrServerClosed {
 			serverErrors <- err
 		}
